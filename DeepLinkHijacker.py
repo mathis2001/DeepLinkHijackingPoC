@@ -164,8 +164,8 @@ def main() -> None:
     )
 
     parser.add_argument(
-        "-u", "--url",
-        help="Define an attacker domain to extract the intent's data"
+        "-d", "--domain",
+        help="Define an attacker domain to exfiltrate the intent's data"
     )
 
     parser.add_argument(
@@ -182,8 +182,8 @@ def main() -> None:
     args = parser.parse_args()
 
     insert_deep_link(ANDROID_MANIFEST_PATH, args.link)
-    if args.url:
-    	replace_collect_domain(JAVA_ACTIVITY_PATH, args.url)
+    if args.domain:
+    	replace_collect_domain(JAVA_ACTIVITY_PATH, args.domain)
     build_apk()
 
     if not APK_LOCATION.exists():
@@ -200,3 +200,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
