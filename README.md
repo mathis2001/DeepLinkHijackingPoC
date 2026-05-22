@@ -12,11 +12,18 @@ Modifies the deep link scheme and host portions of the AndroidManifest.xml of a 
 
 ## Requirements
 
-Python3
+**Python3**
 
-adb (Android Debug Bridge) - Optional. Only required for the install option.
+**adb** (Android Debug Bridge) - Optional. Only required for the install option.
 
-Android SDK: replace the /path/to/Android/Sdk in the local.properties file
+**Android SDK**: replace the **/path/to/Android/Sdk** in the local.properties file
+
+If you have any poblem with gradle, downgrade your Java version to **Java 11** for compatibility
+```
+sudo apt install openjdk-11-jdk
+export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+export PATH=$JAVA_HOME/bin:$PATH
+```
 <br><br>
 
 ## Usage
